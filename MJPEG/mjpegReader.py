@@ -8,7 +8,6 @@ from pyimagesearch.trackableobject import TrackableObject
 from datetime import datetime
 from imutils.video import FPS
 import numpy as np
-from imagezmq import imagezmq
 #import argparse
 import imutils
 import time
@@ -24,10 +23,11 @@ ESTIMATED_NUM_PIS = 1
 ACTIVE_CHECK_PERIOD = 10
 ACTIVE_CHECK_SECONDS = ESTIMATED_NUM_PIS * ACTIVE_CHECK_PERIOD
 
-class stream_detector:
+class mjpg_stream_detector:
 
     def __init__(
         self,
+        URL,
         prototxt = "mobilenet_ssd/MobileNetSSD_deploy.prototxt",
         model = "mobilenet_ssd/MobileNetSSD_deploy.caffemodel",
         confidence = 0.4,
@@ -35,36 +35,38 @@ class stream_detector:
         output = ''
     ):
 
+        #initialize object class
         self.CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
         "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
         "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
         "sofa", "train", "tvmonitor"]
-    
+
+        #initialize network property
         self.confidence = confidence
         self.net = cv2.dnn.readNetFromCaffe(prototxt, model)
-
-        self.imageHub = imagezmq.ImageHub()
+        self.skipframes = skipframes
 		
+         #initialize tracker
+        self.ct = CentroidTracker(maxDisappeared=40, maxDistance=50)
+        self.trackers = []
+        self.trackableObjects = {}
+
         self.W = None
         self.H = None
 		#self.mW = args["montageW"]
 		#self.mH = args["montageH"]
 
-        self.ct = CentroidTracker(maxDisappeared=40, maxDistance=50)
-		#self.frameDict = {}
-        self.trackers = []
-        self.trackableObjects = {}
-
-        self.totalFrames = 0
-        self.skipframes = skipframes
-        self.lastActive = {}
-        self.lastActiveCheck = datetime.now()
-
+        #initialize video writer
         self.output = output
         self.writer = None
 
+        #initialize FPS counter
+        self.totalFrames = 0
         self.fps = FPS().start()
         print("Initiate detector...")
+
+        #generate capture object from mjpg stream
+        self.cap = cv2.VideoCapture(URL)
 
     def main(self):
         
@@ -74,18 +76,13 @@ class stream_detector:
         try:
             while True:
 
-                #(rpiName, frame) = self.imageHub.recv_image()
-				
-                rpiName, jpg_buffer = self.imageHub.recv_jpg()
-                frame = cv2.imdecode(np.frombuffer(jpg_buffer, dtype='uint8'), -1)
-
-				
-                self.imageHub.send_reply(b'OK')
                 # frame = frame[1] if args.get("input", False) else frame
-                if rpiName not in self.lastActive.keys():
-                    print("[INFO] receiving data from {}...".format(rpiName))
-                self.lastActive[rpiName] = datetime.now()
                 
+                result, frame = self.cap.read()
+                if result == False:
+                    print("Error")
+                    break
+
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
                 if self.W is None or self.H is None:
@@ -184,8 +181,6 @@ class stream_detector:
                     ("Status", status),
                 ]
 
-                cv2.putText(frame, rpiName, (10, 25),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                 for (i, (k, v)) in enumerate(info):
                     text = "{}: {}".format(k, v)
                     cv2.putText(frame, text, (10, self.H - ((i * 20) + 20)),
@@ -203,20 +198,7 @@ class stream_detector:
                 key = cv2.waitKey(1) & 0xFF
 
                 # write image to video
-                self.writer.write(frame)
-
-                if (datetime.now() - self.lastActiveCheck).seconds > ACTIVE_CHECK_SECONDS:
-                # loop over all previously active devices
-                    for (rpiName, ts) in list(self.lastActive.items()):
-                # remove the RPi from the last active and frame
-                # dictionaries if the device hasn't been active recently
-                        if (datetime.now() - ts).seconds > ACTIVE_CHECK_SECONDS:
-                            print("[INFO] lost connection to {}".format(rpiName))
-                            self.lastActive.pop(rpiName)
-                            #frameDict.pop(rpiName)
-
-                # set the last active check time as current time
-                self.lastActiveCheck = datetime.now()
+                #self.writer.write(frame)
 
                 # if the `q` key was pressed, break from the loop
                 if key == ord("q"):
@@ -241,5 +223,5 @@ class stream_detector:
         self.writer.release()
 
 if __name__ == '__main__':
-    test = stream_detector(output = "test_capturefromvideo.avi")
+    test = mjpg_stream_detector(URL="http://169.254.151.21:8000/stream.mjpg")
     test.main()

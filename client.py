@@ -35,7 +35,7 @@ try:
         frame = imutils.resize(frame, width=400)
         sender.send_image(rpiName, frame)
         fps.update()
-except:
+except KeyboardInterrupt:
     fps.stop()
     print("[INFO] elapsed time: {:.2f}".format(fps.elapsed()))
     print("[INFO] approx. FPS: {:.2f}".format(fps.fps()))

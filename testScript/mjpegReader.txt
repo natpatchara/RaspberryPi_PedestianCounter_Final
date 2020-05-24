@@ -1,0 +1,13 @@
+import cv2
+
+class mjpegReader():
+    def __init__(self):
+        pass
+
+    def read(self, URL):
+        cap = cv2.VideoCapture(url)
+        result, frame = cap.read()
+        if result == False:
+            print("Error")
+            return None
+        return frame
